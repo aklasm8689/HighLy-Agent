@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: highly-agent-backend
+    env: node
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BACKEND_PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MANAGEMENT_API_KEY
+        sync: false

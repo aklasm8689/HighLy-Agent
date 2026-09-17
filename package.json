@@ -1,0 +1,38 @@
+{
+  "name": "highlyagent-backend",
+  "version": "1.0.0",
+  "description": "HighLyAgent Backend API and WebSocket Gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs"
+  },
+  "dependencies": {
+    "@google/genai": "^2.21.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
+    "edge-tts-universal": "^1.4.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.0",
+    "swagger-ui-express": "^5.0.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.5.5",
+    "@types/swagger-ui-express": "^4.1.8",
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.23.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  }
+}
