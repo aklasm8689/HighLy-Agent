@@ -210,6 +210,13 @@ export const knowledgePatterns = pgTable(
     learningStage: varchar('learning_stage', { length: 32 }).default('learning').notNull(), // 'learning' | 'matured' | 'verified'
     targetVariants: integer('target_variants').default(3).notNull(),
     qualityScore: real('quality_score').default(1.0).notNull(),
+    // Context-Aware Conditional Response System columns
+    reason: varchar('reason', { length: 100 }).default('static_response'),
+    userState: varchar('user_state', { length: 50 }).default('any'), // 'new' | 'returning' | 'active' | 'vip' | 'any'
+    conversationStage: varchar('conversation_stage', { length: 50 }).default('any'), // 'opening' | 'middle' | 'closing' | 'follow_up' | 'any'
+    timeContext: varchar('time_context', { length: 50 }).default('any'), // 'morning' | 'afternoon' | 'evening' | 'night' | 'any'
+    parentRequired: boolean('parent_required').default(false),
+    profileRequired: jsonb('profile_required').$type<Record<string, any> | null>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     lastUsedAt: timestamp('last_used_at'),
@@ -256,6 +263,7 @@ export const patternAnswerTemplates = pgTable('pattern_answer_templates', {
   template: text('template').notNull(),
   conditions: jsonb('conditions').$type<Record<string, any> | null>(),
   priority: integer('priority').default(1).notNull(),
+  variantType: varchar('variant_type', { length: 50 }).default('default'), // 'default' | 'context_aware'
   usageCount: integer('usage_count').default(0).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

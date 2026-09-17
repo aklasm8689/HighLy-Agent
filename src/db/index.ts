@@ -248,11 +248,33 @@ export async function initializeDatabaseTables(pool: pg.Pool | null): Promise<bo
           failure_count INT DEFAULT 0 NOT NULL,
           is_active BOOLEAN DEFAULT TRUE NOT NULL,
           is_verified BOOLEAN DEFAULT FALSE NOT NULL,
+          learning_stage VARCHAR(32) DEFAULT 'learning',
+          target_variants INT DEFAULT 3,
+          quality_score REAL DEFAULT 1.0,
+          -- Context-Aware Conditional Response System columns
+          reason VARCHAR(100) DEFAULT 'static_response',
+          user_state VARCHAR(50) DEFAULT 'any',
+          conversation_stage VARCHAR(50) DEFAULT 'any',
+          time_context VARCHAR(50) DEFAULT 'any',
+          parent_required BOOLEAN DEFAULT FALSE,
+          profile_required JSONB DEFAULT NULL,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
           last_used_at TIMESTAMP WITH TIME ZONE,
           CONSTRAINT uq_knowledge_pattern UNIQUE (project_id, intent, pattern_type)
         );
+
+        -- Context-Aware Conditional Response System columns (added via ALTER for safety)
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS reason VARCHAR(100) DEFAULT 'static_response';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS user_state VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS conversation_stage VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS time_context VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS parent_required BOOLEAN DEFAULT FALSE;
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS profile_required JSONB DEFAULT NULL;
+        -- Ensure pattern_answer_templates has conditions and priority
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS conditions JSONB DEFAULT NULL;
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS variant_type VARCHAR(50) DEFAULT 'default';
 
         CREATE TABLE IF NOT EXISTS pattern_tool_sequences (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

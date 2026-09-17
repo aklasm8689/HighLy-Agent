@@ -17,6 +17,13 @@ import {
   UserConversationRecord,
   UserMessageRecord,
 } from './types';
+import {
+  buildContext,
+  checkConditionalMatch,
+  getTimeContext,
+  getUserState,
+  generateGreeting,
+} from './contextChecker';
 
 export function isUuid(id: any): boolean {
   if (!id || typeof id !== 'string') return false;
@@ -54,11 +61,22 @@ export class KnowledgePatternEngine {
     const pool = getPgPool();
     if (!pool) return;
     try {
-      // 1. Ensure columns exist idempotently
+      // 1. Ensure schema columns exist idempotently
       await pool.query(`
         ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS learning_stage VARCHAR(32) DEFAULT 'learning';
         ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS target_variants INTEGER DEFAULT 3;
         ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS quality_score REAL DEFAULT 1.0;
+        -- Context-Aware Conditional Response System columns
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS reason VARCHAR(100) DEFAULT 'static_response';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS user_state VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS conversation_stage VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS time_context VARCHAR(50) DEFAULT 'any';
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS parent_required BOOLEAN DEFAULT FALSE;
+        ALTER TABLE knowledge_patterns ADD COLUMN IF NOT EXISTS profile_required JSONB DEFAULT NULL;
+        -- Ensure pattern_answer_templates has conditions and priority
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS conditions JSONB DEFAULT NULL;
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 1;
+        ALTER TABLE pattern_answer_templates ADD COLUMN IF NOT EXISTS variant_type VARCHAR(50) DEFAULT 'default';
       `).catch(() => {});
 
       // 2. Sync seed patterns
@@ -66,6 +84,9 @@ export class KnowledgePatternEngine {
 
       // 3. Load persisted patterns and templates from DB
       await this.loadPatternsFromDb();
+
+      // 4. Log migration success
+      console.log('[KnowledgePatternEngine] Context-aware conditional response system initialized');
     } catch (err: any) {
       console.warn('[KnowledgePatternEngine] DB init/load error:', err.message);
     }
@@ -82,8 +103,8 @@ export class KnowledgePatternEngine {
       for (const p of this.patterns.values()) {
         if (!isUuid(p.id)) continue;
         await pool.query(
-          `INSERT INTO knowledge_patterns (id, project_id, intent, pattern_type, example_phrases, description, category, source, confidence_score, usage_count, success_count, failure_count, is_active, is_verified, learning_stage, target_variants, quality_score, created_at, updated_at, last_used_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          `INSERT INTO knowledge_patterns (id, project_id, intent, pattern_type, example_phrases, description, category, source, confidence_score, usage_count, success_count, failure_count, is_active, is_verified, learning_stage, target_variants, quality_score, reason, user_state, conversation_stage, time_context, parent_required, profile_required, created_at, updated_at, last_used_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
            ON CONFLICT DO NOTHING`,
           [
             p.id,
@@ -103,6 +124,12 @@ export class KnowledgePatternEngine {
             p.learning_stage || 'learning',
             p.target_variants || 3,
             p.quality_score || 1.0,
+            p.reason || 'static_response',
+            p.user_state || 'any',
+            p.conversation_stage || 'any',
+            p.time_context || 'any',
+            p.parent_required || false,
+            JSON.stringify(p.profile_required || {}),
             p.created_at,
             p.updated_at,
             p.last_used_at || p.created_at,
@@ -158,6 +185,12 @@ export class KnowledgePatternEngine {
           learning_stage: row.learning_stage || 'learning',
           target_variants: Number(row.target_variants || 3),
           quality_score: Number(row.quality_score || 1.0),
+          reason: row.reason || 'static_response',
+          user_state: row.user_state || 'any',
+          conversation_stage: row.conversation_stage || 'any',
+          time_context: row.time_context || 'any',
+          parent_required: Boolean(row.parent_required || false),
+          profile_required: row.profile_required || {},
           created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
           updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
           last_used_at: row.last_used_at ? new Date(row.last_used_at).toISOString() : undefined,
@@ -176,7 +209,9 @@ export class KnowledgePatternEngine {
             template_type: row.template_type || 'success',
             variant_name: row.variant_name || 'short',
             template: row.template,
+            conditions: row.conditions || {},
             priority: Number(row.priority || 1),
+            variant_type: row.variant_type || 'default',
             usage_count: Number(row.usage_count || 0),
             is_active: Boolean(row.is_active),
             created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
@@ -227,6 +262,13 @@ export class KnowledgePatternEngine {
       target_variants: 3,
       quality_score: 1.0,
       suggested_chips: ['আমার অর্ডার ট্র্যাক করুন', 'ডেলিভারি কবে পাব?', 'কাস্টমার কেয়ার'],
+      // Context-Aware Conditional Response System fields
+      reason: 'order_status_query',
+      user_state: 'any',
+      conversation_stage: 'any',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -325,6 +367,13 @@ export class KnowledgePatternEngine {
       target_variants: 4,
       quality_score: 1.0,
       suggested_chips: ['অর্ডার ট্র্যাক করুন', 'রিটার্ন পলিসি', 'প্রোডাক্ট ক্যাটাগরি', 'কাস্টমার কেয়ার'],
+      // Context-Aware Conditional Response System fields
+      reason: 'greeting_response',
+      user_state: 'any',
+      conversation_stage: 'opening',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -433,6 +482,13 @@ export class KnowledgePatternEngine {
       target_variants: 2,
       quality_score: 1.0,
       suggested_chips: ['অর্ডার ট্র্যাক করুন', 'রিটার্ন পলিসি', 'প্রোডাক্ট ক্যাটাগরি', 'কাস্টমার কেয়ার'],
+      // Context-Aware Conditional Response System fields
+      reason: 'salam_greeting_response',
+      user_state: 'any',
+      conversation_stage: 'opening',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -540,6 +596,13 @@ export class KnowledgePatternEngine {
       target_variants: 1,
       quality_score: 1.0,
       suggested_chips: ['অর্ডার ট্র্যাক করুন', 'রিটার্ন পলিসি', 'কাস্টমার কেয়ার'],
+      // Context-Aware Conditional Response System fields
+      reason: 'language_change_response',
+      user_state: 'any',
+      conversation_stage: 'any',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -618,6 +681,13 @@ export class KnowledgePatternEngine {
       target_variants: 2,
       quality_score: 1.0,
       suggested_chips: ['অর্ডার ট্র্যাক করুন', 'রিটার্ন পলিসি', 'কাস্টমার কেয়ার'],
+      // Context-Aware Conditional Response System fields
+      reason: 'identity_response',
+      user_state: 'any',
+      conversation_stage: 'opening',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -686,6 +756,13 @@ export class KnowledgePatternEngine {
       is_active: true,
       is_verified: true,
       suggested_chips: ['রিটার্ন করার নিয়ম কি?', 'রিফান্ডের টাকা কত দিনে পাব?', 'অর্ডার পরিবর্তন করতে চাই'],
+      // Context-Aware Conditional Response System fields
+      reason: 'return_policy_info',
+      user_state: 'any',
+      conversation_stage: 'any',
+      time_context: 'any',
+      parent_required: false,
+      profile_required: {},
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -910,6 +987,58 @@ export class KnowledgePatternEngine {
       Math.min(1.0, highestSimilarity * (bestPattern.confidence_score || 0.95)).toFixed(2)
     );
 
+    // ==========================================
+    // CONTEXT-AWARE CONDITIONAL RESPONSE SYSTEM
+    // Check all 7 conditions before serving static answer
+    // ==========================================
+    try {
+      const userProfile = await userProfileEngine.getOrCreateProfile(projectId, userId || 'anonymous');
+      const context = buildContext(
+        userProfile,
+        undefined, // messageHistory - will be passed from agent.ts
+        [] // recentTools
+      );
+      
+      // Build context conditions
+      const contextConditions = {
+        message_match: combinedConfidence,
+        user_state: getUserState(userProfile),
+        conversation_stage: isOngoingConversation ? 'middle' : 'opening',
+        time_context: getTimeContext(),
+        has_parent: isOngoingConversation,
+        profile: {
+          name: userProfile.display_name,
+          language: userProfile.preferred_language,
+          preferences: userProfile.metadata?.preferences,
+        },
+        recent_tools: [],
+      };
+
+      // Get templates for this pattern
+      const templates = this.answerTemplates.get(bestPattern.id) || [];
+      
+      // Check conditional match using all 7 conditions
+      const conditionalResult = checkConditionalMatch(combinedConfidence, templates, contextConditions, {
+        minSimilarity: 0.7,
+        requireAllConditions: false,
+        fallbackToAI: true,
+      });
+
+      // If context conditions don't match, fall back to AI
+      if (!conditionalResult.has_match && conditionalResult.action === 'call_ai') {
+        console.log(`[ContextChecker] Pattern match rejected: ${conditionalResult.reason}`);
+        return null; // Let AI handle this
+      }
+
+      // If clarification needed, mark for ASK_CONFIRMATION
+      if (conditionalResult.action === 'ask_clarification') {
+        // Keep existing logic for clarification
+      }
+    } catch (err: any) {
+      // If context checking fails, fall through to normal logic
+      console.warn('[ContextChecker] Context check failed, falling back to normal logic:', err.message);
+    }
+
     const extractedVariables = this.extractSlotValues(query, bestPattern);
     const missingInputsList = this.missingInputs.get(bestPattern.id) || [];
     const toolSeqs = this.toolSequences.get(bestPattern.id) || [];
@@ -918,19 +1047,12 @@ export class KnowledgePatternEngine {
     const targetVariants = bestPattern.target_variants || 3;
     const isMatured = bestPattern.learning_stage === 'matured' || bestPattern.is_verified || templates.length >= targetVariants;
 
-    // Decision Logic
+    // Decision Logic (enhanced with context)
     let decision: ConfidenceDecision = 'AI_EXECUTION';
     if (combinedConfidence >= 0.90) {
       if (isMatured) {
-        // Fully matured pattern: 100% Zero-API Direct Execution with rotation!
         decision = 'DIRECT_EXECUTION';
       } else {
-        // Progressive multi-user learning stage (< targetVariants templates collected):
-        // To build a rich, human-like repository of multiple varied answers without repetitive robot-speech,
-        // we alternate:
-        // If we have at least 1 template, 50% of the time we give an existing template immediately,
-        // and 50% of the time we delegate to AI so autoLearnPattern captures another natural variation.
-        // This stops permanently once targetVariants (e.g. 3) distinct variations are acquired!
         const exploreNewVariant = Math.random() < 0.50 && templates.length < targetVariants;
         decision = exploreNewVariant ? 'AI_EXECUTION' : 'DIRECT_EXECUTION';
       }

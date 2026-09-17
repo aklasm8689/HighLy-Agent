@@ -30,6 +30,13 @@ export interface KnowledgePatternRecord {
   target_variants?: number;
   quality_score?: number;
   suggested_chips?: string[];
+  // Context-Aware Conditional Response System fields
+  reason?: string;
+  user_state?: 'new' | 'returning' | 'active' | 'vip' | 'any';
+  conversation_stage?: 'opening' | 'middle' | 'closing' | 'follow_up' | 'any';
+  time_context?: 'morning' | 'afternoon' | 'evening' | 'night' | 'any';
+  parent_required?: boolean;
+  profile_required?: Record<string, any>;
   created_at: string;
   updated_at: string;
   last_used_at?: string;
