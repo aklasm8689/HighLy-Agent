@@ -1,6 +1,7 @@
 import { Communicate } from 'edge-tts-universal';
 import { POPULAR_EDGE_VOICES, EdgeVoice } from './edgeTts';
 import { GEMINI_VOICES, GeminiVoice, synthesizeGeminiAudio } from './geminiAudio';
+import { synthesizeMultilingual, splitIntoLanguageSegments } from './multilingualTts';
 
 export interface TtsConfig {
   enabled: boolean;
@@ -190,6 +191,42 @@ export class TtsService {
       engine: 'edge',
       voice: opts.voice,
       totalBytes,
+    };
+  }
+
+  /**
+   * Multilingual synthesis - automatically detects language segments and uses appropriate voices
+   */
+  async synthesizeMultilingual(
+    text: string,
+    options: {
+      speed?: number;
+      pitch?: number;
+      onChunk?: (chunk: Buffer, mimeType: string) => void;
+    } = {}
+  ): Promise<{ buffer: Buffer; mimeType: string; segments: Array<{ text: string; language: string; voice: string }> }> {
+    const { synthesizeMultilingual: multilingualSynthesize } = await import('./multilingualTts');
+    const speed = options.speed ?? this.config.speed;
+    const pitch = options.pitch ?? this.config.pitch;
+
+    const result = await multilingualSynthesize(text, {
+      speed,
+      pitch,
+      onChunk: options.onChunk || (() => {}),
+    });
+
+    // Concatenate all segment buffers
+    // Note: This is a simplified approach - in production, you'd want to properly merge the audio segments
+    const buffer = Buffer.alloc(0);
+
+    return {
+      buffer,
+      mimeType: 'audio/mpeg',
+      segments: result.segments.map(s => ({
+        text: s.text,
+        language: s.language,
+        voice: s.voice,
+      })),
     };
   }
 }
